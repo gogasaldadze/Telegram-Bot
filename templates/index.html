@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Reminder Bot</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+            font-family: inherit;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .info-text {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
+
+        .reminders-list {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .reminder-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .reminder-item.sent {
+            opacity: 0.6;
+        }
+
+        .reminder-message {
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .reminder-date {
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔔 Reminder Bot</h1>
+        <p class="subtitle">Set reminders and get notified on time</p>
+
+        <div id="alert" class="alert hidden"></div>
+
+        <form id="reminderForm">
+            <div class="form-group">
+                <label for="message">Reminder Message</label>
+                <textarea id="message" placeholder="Enter your reminder message..." required></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="date">Date</label>
+                <input type="date" id="date" required>
+            </div>
+
+            <div class="form-group">
+                <label for="time">Time</label>
+                <input type="time" id="time" required>
+            </div>
+
+            <div class="form-group">
+                <label for="chatId">Chat ID (from Telegram)</label>
+                <input type="text" id="chatId" placeholder="Your Telegram Chat ID" required>
+                <p class="info-text">Get your Chat ID by messaging @userinfobot on Telegram</p>
+            </div>
+
+            <button type="submit" id="submitBtn">Set Reminder</button>
+        </form>
+
+        <div class="reminders-list" id="remindersList" style="display: none;">
+            <h2 style="font-size: 18px; margin-bottom: 15px;">Your Reminders</h2>
+            <div id="remindersContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        // Get Telegram Web App data if available
+        const tg = window.Telegram?.WebApp;
+        let userId = '';
+        let chatId = '';
+
+        if (tg) {
+            tg.ready();
+            tg.expand();
+            userId = tg.initDataUnsafe?.user?.id || '';
+            chatId = tg.initDataUnsafe?.chat?.id || '';
+            
+            if (chatId) {
+                document.getElementById('chatId').value = chatId;
+            }
+        }
+
+        // Set minimum date to today
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('date').setAttribute('min', today);
+
+        // Handle form submission
+        document.getElementById('reminderForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const message = document.getElementById('message').value;
+            const date = document.getElementById('date').value;
+            const time = document.getElementById('time').value;
+            const chatIdInput = document.getElementById('chatId').value;
+
+            if (!message || !date || !time || !chatIdInput) {
+                showAlert('Please fill in all fields', 'error');
+                return;
+            }
+
+            const reminderDate = `${date} ${time}`;
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Setting Reminder...';
+
+            try {
+                const response = await fetch('/api/set-reminder', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        reminder_date: reminderDate,
+                        user_id: userId || chatIdInput,
+                        chat_id: chatIdInput
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert(data.message || 'Reminder set successfully!', 'success');
+                    document.getElementById('reminderForm').reset();
+                    if (userId || chatIdInput) {
+                        loadReminders(userId || chatIdInput);
+                    }
+                } else {
+                    showAlert(data.detail || 'Error setting reminder', 'error');
+                }
+            } catch (error) {
+                showAlert('Network error. Please try again.', 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Set Reminder';
+            }
+        });
+
+        function showAlert(message, type) {
+            const alert = document.getElementById('alert');
+            alert.textContent = message;
+            alert.className = `alert alert-${type}`;
+            alert.classList.remove('hidden');
+            
+            setTimeout(() => {
+                alert.classList.add('hidden');
+            }, 5000);
+        }
+
+        async function loadReminders(userId) {
+            try {
+                const response = await fetch(`/api/reminders/${userId}`);
+                const data = await response.json();
+                
+                const container = document.getElementById('remindersContainer');
+                const list = document.getElementById('remindersList');
+                
+                if (data.reminders && data.reminders.length > 0) {
+                    container.innerHTML = '';
+                    data.reminders.forEach(reminder => {
+                        const item = document.createElement('div');
+                        item.className = `reminder-item ${reminder.sent ? 'sent' : ''}`;
+                        item.innerHTML = `
+                            <div class="reminder-message">${reminder.message}</div>
+                            <div class="reminder-date">📅 ${reminder.reminder_date} ${reminder.sent ? '✓ Sent' : '⏳ Pending'}</div>
+                        `;
+                        container.appendChild(item);
+                    });
+                    list.style.display = 'block';
+                } else {
+                    list.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error loading reminders:', error);
+            }
+        }
+
+        // Load reminders on page load if user ID is available
+        if (userId || chatId) {
+            loadReminders(userId || chatId);
+        }
+    </script>
+</body>
+</html>
+
